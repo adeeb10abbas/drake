@@ -24,11 +24,13 @@ void System<T>::Accept(SystemVisitor<T>* v) const {
   v->VisitSystem(*this);
 }
 
+
+//
 template <typename T>
 std::unique_ptr<Context<T>> System<T>::AllocateContext() const {
   return dynamic_pointer_cast_or_throw<Context<T>>(
       SystemBase::AllocateContext());
-}
+} 
 
 template <typename T>
 std::unique_ptr<CompositeEventCollection<T>>
@@ -182,7 +184,33 @@ template <typename T>
 void System<T>::Publish(const Context<T>& context,
                         const EventCollection<PublishEvent<T>>& events) const {
   ValidateContext(context);
-  DispatchPublishHandler(context, events);
+  DispatchPublishHandler(context, events); 
+}
+
+template<typename T>
+template <typename To, typename From>
+std::unique_ptr<To> System<T>::dynamic_pointer_cast(std::unique_ptr<From>&& from) {
+  DRAKE_DEMAND(from != nullptr);
+  // Use `dynamic_cast<>` before changing ownership.
+  To* to_raw = dynamic_cast<To*>(from.get());
+  if (to_raw == nullptr) {
+    throw std::bad_cast();
+  }
+  // Now change ownership.
+  from.release();
+  std::unique_ptr<To> to(to_raw);
+  return to;
+}
+
+/// Clones system using hacky workaround - convert to AutoDiff then back to
+/// double. This is a workaround for the fact that we don't have a clone()
+/// method on System<T> yet.
+template <typename SystemType>
+std::unique_ptr<SystemType> System<SystemType>::CloneSystem(const SystemType& system) {
+  // Cast here because SFINAE is ugly and not strictly necessary.
+  const drake::systems::System<double>& base = system;
+  return System<SystemType>::dynamic_pointer_cast<SystemType>(
+      base.ToAutoDiffXd()->ToScalarType<double>());
 }
 
 template <typename T>

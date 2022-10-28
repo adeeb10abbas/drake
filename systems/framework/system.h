@@ -165,37 +165,6 @@ class System : public SystemBase {
   fed through to any of its outputs and `false` otherwise. */
   bool HasAnyDirectFeedthrough() const;
 
-  /**
-     A std::unique_ptr<> version of `std::dynamic_pointer_cast` (which is for
-     std::shared_ptr<>), with slightly more strict usage.
-
-     @pre from is not null
-     @throws bad_cast if dynamic_cast<> fails or returns nullptr
-     @return non-null instance of type To
-     */
-  template <typename To, typename From>
-  std::unique_ptr<To> dynamic_pointer_cast(std::unique_ptr<From>&& from) {
-    DRAKE_DEMAND(from != nullptr);
-    // Use `dynamic_cast<>` before changing ownership.
-    To* to_raw = dynamic_cast<To*>(from.get());
-    if (to_raw == nullptr) {
-      throw std::bad_cast();
-    }
-    // Now change ownership.
-    from.release();
-    std::unique_ptr<To> to(to_raw);
-    return to;
-  }
-
-  /// Clones system using hacky workaround - convert to AutoDiff then back to
-  /// double.
-  template <typename SystemType>
-  std::unique_ptr<SystemType> CloneSystem(const SystemType& system) {
-    // Cast here because SFINAE is ugly and not strictly necessary.
-    const drake::systems::System<double>& base = system;
-    return dynamic_pointer_cast<SystemType>(
-        base.ToAutoDiffXd()->ToScalarType<double>());
-  }
   /** Returns true if there might be direct-feedthrough from any input port to
   the given @p output_port, and false otherwise. */
   bool HasDirectFeedthrough(int output_port) const;
@@ -1463,6 +1432,21 @@ class System : public SystemBase {
       int size, std::optional<RandomDistribution> random_type = std::nullopt);
 
   //@}
+
+  template <typename To, typename From>
+  std::unique_ptr<To> dynamic_pointer_cast(std::unique_ptr<From>&& from);
+
+//   template <typename SystemType>
+  std::unique_ptr<T> CloneSystem(const T& system);
+
+  /**
+     A std::unique_ptr<> version of `std::dynamic_pointer_cast` (which is for
+     std::shared_ptr<>), with slightly more strict usage.
+
+     @pre from is not null
+     @throws bad_cast if dynamic_cast<> fails or returns nullptr
+     @return non-null instance of type To
+  */
 
   /** Adds an already-created constraint to the list of constraints for this
   System.  Ownership of the SystemConstraint is transferred to this system. */
