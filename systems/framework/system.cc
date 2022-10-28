@@ -188,8 +188,8 @@ void System<T>::Publish(const Context<T>& context,
 }
 
 template<typename T>
-template <typename To, typename From>
-std::unique_ptr<To> System<T>::dynamic_pointer_cast(std::unique_ptr<From>&& from) {
+template <typename To>
+auto System<T>::dynamic_pointer_cast(std::unique_ptr<T>&& from) {
   DRAKE_DEMAND(from != nullptr);
   // Use `dynamic_cast<>` before changing ownership.
   To* to_raw = dynamic_cast<To*>(from.get());
@@ -205,11 +205,14 @@ std::unique_ptr<To> System<T>::dynamic_pointer_cast(std::unique_ptr<From>&& from
 /// Clones system using hacky workaround - convert to AutoDiff then back to
 /// double. This is a workaround for the fact that we don't have a clone()
 /// method on System<T> yet.
+
+template <typename T>
 template <typename SystemType>
-std::unique_ptr<SystemType> System<SystemType>::CloneSystem(const SystemType& system) {
+auto System<T>::CloneSystem(const SystemType& system) {
   // Cast here because SFINAE is ugly and not strictly necessary.
   const drake::systems::System<double>& base = system;
-  return System<SystemType>::dynamic_pointer_cast<SystemType>(
+  // return 0;
+  return dynamic_pointer_cast<SystemType>(
       base.ToAutoDiffXd()->ToScalarType<double>());
 }
 

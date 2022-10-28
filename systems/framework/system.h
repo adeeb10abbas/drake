@@ -1433,11 +1433,11 @@ class System : public SystemBase {
 
   //@}
 
-  template <typename To, typename From>
-  std::unique_ptr<To> dynamic_pointer_cast(std::unique_ptr<From>&& from);
+  template <typename To>
+  auto dynamic_pointer_cast(std::unique_ptr<T>&& from);
 
-//   template <typename SystemType>
-  std::unique_ptr<T> CloneSystem(const T& system);
+  template<typename SystemType>
+  auto CloneSystem(const SystemType& system);
 
   /**
      A std::unique_ptr<> version of `std::dynamic_pointer_cast` (which is for
