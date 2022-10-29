@@ -316,7 +316,8 @@ GTEST_TEST(SystemExtrasTest, CloneSystem) {
   Adder<double> adder(1, 1);
   adder.set_name("my_adder");
 
-  std::unique_ptr<Adder<double>> adder_clone = System<double>::CloneSystem(adder);
+  std::unique_ptr<Adder<double>> adder_clone =
+    System<double>::CloneSystem(adder);
   EXPECT_EQ(adder_clone->get_name(), "my_adder");
 }
 class SystemTest : public ::testing::Test {
