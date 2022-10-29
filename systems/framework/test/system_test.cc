@@ -18,6 +18,7 @@
 #include "drake/systems/framework/leaf_output_port.h"
 #include "drake/systems/framework/system_output.h"
 #include "drake/systems/framework/test_utilities/my_vector.h"
+#include "drake/systems/primitives/adder.h"
 
 namespace drake {
 namespace systems {
@@ -274,7 +275,50 @@ class TestSystem : public TestSystemBase<double> {
   mutable std::vector<int> published_numbers_;
   mutable std::vector<int> updated_numbers_;
 };
+/// Adeeb {WIP}
+class Base {
+ public:
+  virtual ~Base() {}
+};
 
+class Child : public Base {
+ public:
+  virtual ~Child() {}
+};
+
+class OtherChild : public Base {
+ public:
+  virtual ~OtherChild() {}
+};
+
+GTEST_TEST(MemoryTest, DynamicPointerCast) {
+  // Positive.
+  {
+    std::unique_ptr<Base> base = std::make_unique<Child>();
+    Child* child_ptr = dynamic_cast<Child*>(base.get());
+    EXPECT_NE(child_ptr, nullptr);
+    std::unique_ptr<Child> child = dynamic_pointer_cast<Child>(std::move(base));
+    EXPECT_EQ(base.get(), nullptr);
+    EXPECT_EQ(child.get(), child_ptr);
+  }
+
+  // Negative.
+  {
+    std::unique_ptr<Base> base = std::make_unique<OtherChild>();
+    EXPECT_THROW(dynamic_pointer_cast<Child>(std::move(base)), std::bad_cast);
+    // Ensure we have some transaction integrity (the instance doesn't get
+    // prematurely deleted).
+    EXPECT_NE(base.get(), nullptr);
+  }
+}
+
+GTEST_TEST(SystemExtrasTest, CloneSystem) {
+  Adder<double> adder(1, 1);
+  adder.set_name("my_adder");
+
+  std::unique_ptr<Adder<double>> adder_clone = System<double>::CloneSystem(adder);
+  EXPECT_EQ(adder_clone->get_name(), "my_adder");
+}
 class SystemTest : public ::testing::Test {
  protected:
   void SetUp() override { context_ = system_.CreateDefaultContext(); }
