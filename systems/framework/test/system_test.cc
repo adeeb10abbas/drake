@@ -283,16 +283,6 @@ class TestSystem : public TestSystemBase<double> {
   mutable std::vector<int> updated_numbers_;
 };
 
-// Tests that CloneSystem() works for a System with no inputs or outputs.
-GTEST_TEST(SystemExtrasTest, CloneSystem) {
-  Adder<double> adder(1, 1);
-  adder.set_name("my_adder");
-
-  std::unique_ptr<Adder<double>> adder_clone =
-    adder.CloneSystem(adder);
-  EXPECT_EQ(adder_clone->get_name(), "my_adder");
-}
-
 class SystemTest : public ::testing::Test {
  protected:
   void SetUp() override { context_ = system_.CreateDefaultContext(); }
@@ -527,6 +517,18 @@ TEST_F(SystemTest, PortSelectionTest) {
             &system_.get_output_port(0));
 }
 
+// Tests that CloneSystem() works for a System with no inputs or outputs.
+GTEST_TEST(SystemTest, CloneSystem) {
+  Adder<double> adder(1, 1);
+  adder.set_name("my_adder");
+
+  std::unique_ptr<Adder<double>> adder_clone =
+    adder.CloneSystem(adder);
+  EXPECT_EQ(adder_clone->get_name(), "my_adder");
+  // EXPECT_EQ(adder_clone->get_input_port(0).size(), 1);
+  // EXPECT_EQ(adder_clone->get_input_port(1).size(), 1);
+  EXPECT_EQ(adder_clone->get_system_id(), adder.get_system_id());
+}
 // Tests the constraint list logic.
 TEST_F(SystemTest, SystemConstraintTest) {
   EXPECT_EQ(system_.num_constraints(), 0);
