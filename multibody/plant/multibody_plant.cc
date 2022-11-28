@@ -8,6 +8,16 @@
 #include <stdexcept>
 #include <vector>
 
+#include <drake_vendor/sdf/Error.hh>
+#include <drake_vendor/sdf/Frame.hh>
+#include <drake_vendor/sdf/Joint.hh>
+#include <drake_vendor/sdf/JointAxis.hh>
+#include <drake_vendor/sdf/Link.hh>
+#include <drake_vendor/sdf/Model.hh>
+#include <drake_vendor/sdf/ParserConfig.hh>
+#include <drake_vendor/sdf/Root.hh>
+#include <drake_vendor/sdf/World.hh>
+
 #include "drake/common/drake_throw.h"
 #include "drake/common/text_logging.h"
 #include "drake/common/unused.h"
@@ -960,6 +970,76 @@ void MultibodyPlant<T>::SetUpJointLimitsParameters() {
         "the plant in discrete-time mode, which does support joint limits. "
         "Joints that specify limits are: " + joint_names_with_limits;
   }
+}
+
+// converts Multibodyplant to sdf.
+int ToSDF(const MultibodyPlant<double>& plant, std::string& sdf_name) {
+  
+  // Create a new sdf model.
+  sdf::Root root;
+  auto world = root.WorldByIndex(0);
+  world->SetName("default");
+
+  std::cout << "sdf output name: " << sdf_name << std::endl;
+  sdf::Model sdf_model;
+  // Create submodels for each body.
+  for (ModelInstanceIndex model_instance(0);
+       model_instance < plant.num_model_instances(); ++model_instance) {
+        sdf_model.SetName(plant.GetModelInstanceName(model_instance));
+      for (const BodyIndex& body_index : plant.GetBodyIndices(model_instance)) {
+        sdf::Model sdf_submodel;
+        const Body<double>& body = plant.get_body(body_index);
+        // Create a new link from the joints in the multibody.
+        // Limit the joints to only one body at a time.
+        // Create a way to track which joints belong to which body.
+
+        for (JointIndex joint_index(0); joint_index < plant.num_joints();
+             ++joint_index) {
+          const Joint<double>& joint = plant.get_joint(joint_index);
+          if (joint.child_body().index() == body.index()) {
+            // Add links from the joints (weird way to go about it, but it works).
+
+            // Child link.
+            sdf::Link sdf_link_child;
+            sdf_link_child.SetName(joint.child_body().name());
+            sdf_submodel.AddLink(sdf_link_child);
+
+            // Parent link.
+            sdf::Link sdf_link_parent;
+            sdf_link_parent.SetName(joint.parent_body().name());
+            sdf_submodel.AddLink(sdf_link_parent);
+
+            // Add joint.
+            sdf::Joint sdf_joint;
+            sdf_joint.SetName(joint.name());
+
+            // Set joint type.
+            
+            if (joint.type_name() == "revolute") {
+              sdf_joint.SetType(sdf::JointType::REVOLUTE);
+            } else if (joint.type_name() == "prismatic") {
+              sdf_joint.SetType(sdf::JointType::PRISMATIC);
+            } else if (joint.type_name() == "fixed") {
+              sdf_joint.SetType(sdf::JointType::FIXED);
+            } else {
+              std::cout << "Joint type not supported: " << joint.type_name() << 
+              std::endl;
+              return 1;
+            }
+
+            sdf_joint.SetType(sdf::JointType::REVOLUTE);
+            // sdf_joint.SetAxis(Vector3d(0, 0, 1));
+            sdf_submodel.AddJoint(sdf_joint);
+          }
+        }
+
+
+      }
+    // sdf_submodel.SetName(plant.GetModelInstanceName(model_instance));
+    // sdf_submodel.SetStatic(true);
+    // sdf_model.AddNestedModel(sdf_submodel);
+  }
+
 }
 
 template<typename T>

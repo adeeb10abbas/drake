@@ -4131,6 +4131,8 @@ class MultibodyPlant : public internal::MultibodyTreeSystem<T> {
     return internal_tree().GetModelInstanceName(model_instance);
   }
 
+  int ToSDF(const MultibodyPlant<double>& plant, std::string& sdf_name);
+
   /// @returns `true` if a model instance named `name` was added to this model.
   /// @see AddModelInstance().
   bool HasModelInstanceNamed(std::string_view name) const {
