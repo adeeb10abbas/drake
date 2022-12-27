@@ -279,21 +279,25 @@ class System : public SystemBase {
     return this->get_cache_entry(time_derivatives_cache_index_);
   }
 
-//----------------------------------------------------------------------------
-/**                    CloneSystem
- * This method clones the system and returns a unique pointer to the
- * clone (the result is never null). The clone is a deep copy of the
- * original system. The clone is not connected to the original system
- * in any way. The clone is done using hacky workaround - converts to 
- * AutoDiff and then back to double. This is not a good solution,
- * but it works for now. */
-template <typename SystemType>
-std::unique_ptr<SystemType> CloneSystem(const SystemType& system) {
-  // Cast here because SFINAE is ugly and not strictly necessary.
-  const drake::systems::System<double>& base = system;
-  return dynamic_pointer_cast<SystemType>(
-        base.ToAutoDiffXd()->ToScalarType<double>());
-}
+  //----------------------------------------------------------------------------
+  /**
+  This method clones the system and returns a unique pointer to the
+  clone (the result is never null). The clone is a deep copy of the
+  original system. The clone is not connected to the original system
+  in any way. The clone is done using hacky workaround - converts to 
+  AutoDiff and then back to double. This is not a good solution,
+  but it works for now. 
+  @return A unique pointer to the clone of the system. */
+  template <typename SystemType>
+  static std::unique_ptr<SystemType> Clone(const SystemType &system) {
+    // Check if the system is of type double, if not throw an error.
+    // static_assert(std::is_same<typename T::ScalarType, double>::value,
+    //               "System Type must be of type double.");
+    // Cast here because SFINAE is ugly and not strictly necessary.
+    const drake::systems::System<double>& base = system;
+    return dynamic_pointer_cast<SystemType>(
+          base.ToAutoDiffXd()->ToScalarType<double>());
+  }
 
   /** Returns a reference to the cached value of the potential energy (PE),
   evaluating first if necessary using CalcPotentialEnergy().
