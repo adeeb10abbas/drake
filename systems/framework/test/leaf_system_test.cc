@@ -24,6 +24,7 @@
 #include "drake/systems/framework/system_output.h"
 #include "drake/systems/framework/test_utilities/my_vector.h"
 #include "drake/systems/framework/test_utilities/pack_value.h"
+#include "drake/systems/primitives/adder.h"
 
 using Eigen::Vector2d;
 using Eigen::Vector3d;
@@ -1843,6 +1844,21 @@ TEST_F(LeafSystemTest, CallbackAndInvalidUpdates) {
       system_.CalcUnrestrictedUpdate(
           *context, leaf_events.get_unrestricted_update_events(), x.get()),
       std::logic_error);
+}
+
+// Tests that Clone() works for an Adder<double> System
+TEST_F(LeafSystemTest, Clone) {
+  Adder<double> adder(1, 1);
+  adder.set_name("my_adder");
+
+  std::unique_ptr<Adder<double>> adder_clone =
+              adder.Clone<Adder<double>>();
+  EXPECT_EQ(adder_clone->get_name(), "my_adder");
+  EXPECT_EQ(adder_clone->get_input_port(0).size(), 1);
+  EXPECT_EQ(adder_clone->get_output_port(0).size(), 1);
+
+  EXPECT_NE(&adder.get_input_port(0), &adder_clone->get_input_port(0));
+  EXPECT_NE(&adder.get_output_port(0), &adder_clone->get_output_port(0));
 }
 
 // Tests that the next update time is computed correctly for LeafSystems

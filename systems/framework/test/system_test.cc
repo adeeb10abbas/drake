@@ -18,7 +18,6 @@
 #include "drake/systems/framework/leaf_output_port.h"
 #include "drake/systems/framework/system_output.h"
 #include "drake/systems/framework/test_utilities/my_vector.h"
-#include "drake/systems/primitives/adder.h"
 
 namespace drake {
 namespace systems {
@@ -517,15 +516,6 @@ TEST_F(SystemTest, PortSelectionTest) {
             &system_.get_output_port(0));
 }
 
-// Tests that CloneSystem() works for a System with no inputs or outputs.
-TEST_F(SystemTest, Clone) {
-  Adder<double> adder(1, 1);
-  adder.set_name("my_adder");
-
-  std::unique_ptr<Adder<double>> adder_clone = adder.Clone<Adder<double>>();
-
-  EXPECT_EQ(adder_clone->get_name(), "my_adder");
-}
 // Tests the constraint list logic.
 TEST_F(SystemTest, SystemConstraintTest) {
   EXPECT_EQ(system_.num_constraints(), 0);

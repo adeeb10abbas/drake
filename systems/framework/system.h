@@ -282,27 +282,19 @@ class System : public SystemBase {
   //----------------------------------------------------------------------------
   /**
   This method clones the system and returns a unique pointer to the
-  clone (the result is never null). The clone is a deep copy of the
-  original system. The clone is not connected to the original system
-  in any way. The clone is done using hacky workaround - converts to 
+  clone. The result is never nullptr. The clone is a deep copy of the
+  original system. The clone is done using hacky workaround - converts to
   AutoDiff and then back to double. This is not a good solution,
-  but it works for now. 
+  but it works for now.
   @return A unique pointer to the clone of the system. */
   template <typename SystemType>
-  auto Clone() {
-    // Check if the system is of type double, if not throw an error.
-    // static_assert(std::is_same<typename T::ScalarType, double>::value,
-    //               "System Type must be of type double.");
-    // Cast here because SFINAE is ugly and not strictly necessary.
-    // const drake::systems::System<double>& base = this;
-
-    // Cast the current system to double without the object backing the pointer being destroyed 
-
-
+  std::unique_ptr<SystemType> Clone() {
+  // Check if the system is of type double, if not throw an error.
+  static_assert(std::is_same_v<T, double>,
+                "Clone is only implemented for double systems.");
+  // Cast here because SFINAE is ugly and not strictly necessary.
   const drake::systems::System<double>& base = *this;
-//   DRAKE_ASSERT(base != nullptr);
-
- return dynamic_pointer_cast<SystemType>(
+  return dynamic_pointer_cast<SystemType>(
         base.ToAutoDiffXd()->ToScalarType<double>());
   }
 
