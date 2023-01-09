@@ -288,7 +288,8 @@ class System : public SystemBase {
   AutoDiff and then back to double. This is not a good solution,
   but it works for now. 
   @return A unique pointer to the clone of the system. */
-  std::unique_ptr<System<T>> Clone() {
+  template <typename SystemType>
+  auto Clone() {
     // Check if the system is of type double, if not throw an error.
     // static_assert(std::is_same<typename T::ScalarType, double>::value,
     //               "System Type must be of type double.");
@@ -298,11 +299,11 @@ class System : public SystemBase {
     // Cast the current system to double without the object backing the pointer being destroyed 
 
 
-  const drake::systems::System<double>& base = this->ToScalarTypeMaybe<double>().get();
+  const drake::systems::System<double>& base = *this;
 //   DRAKE_ASSERT(base != nullptr);
 
-    return dynamic_pointer_cast<System<T>>(
-          base.ToAutoDiffXd()->ToScalarType<double>());
+ return dynamic_pointer_cast<SystemType>(
+        base.ToAutoDiffXd()->ToScalarType<double>());
   }
 
   /** Returns a reference to the cached value of the potential energy (PE),

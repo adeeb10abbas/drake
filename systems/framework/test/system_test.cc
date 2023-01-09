@@ -522,10 +522,9 @@ TEST_F(SystemTest, Clone) {
   Adder<double> adder(1, 1);
   adder.set_name("my_adder");
 
-  std::unique_ptr<Adder<double>> adder_clone = adder.Clone();
-  // EXPECT_EQ(adder_clone->get_name(), "my_adder");
-  // EXPECT_EQ(adder_clone->get_input_port(0).size(), 1);
-  // EXPECT_EQ(adder_clone->get_input_port(1).size(), 1);
+  std::unique_ptr<Adder<double>> adder_clone = adder.Clone<Adder<double>>();
+
+  EXPECT_EQ(adder_clone->get_name(), "my_adder");
 }
 // Tests the constraint list logic.
 TEST_F(SystemTest, SystemConstraintTest) {
