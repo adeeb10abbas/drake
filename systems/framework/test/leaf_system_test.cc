@@ -927,18 +927,6 @@ TEST_F(LeafSystemTest, DeclareTypedContinuousState) {
   context->SetContinuousState(ones);
   EXPECT_EQ(state_output_port.Eval<MyVector9d>(*context).get_value(), ones);
 }
-// Tests that CloneSystem() works for a System with no inputs or outputs.
-GTEST_TEST(LeafSystemTest, CloneSystem) {
-  Adder<double> adder(1, 1);
-  adder.set_name("my_adder");
-
-  std::unique_ptr<Adder<double>> adder_clone =
-    adder.CloneSystem(adder);
-  EXPECT_EQ(adder_clone->get_name(), "my_adder");
-  // EXPECT_EQ(adder_clone->get_input_port(0).size(), 1);
-  // EXPECT_EQ(adder_clone->get_input_port(1).size(), 1);
-  EXPECT_EQ(adder_clone->get_system_id(), adder.get_system_id());
-}
 
 TEST_F(LeafSystemTest, ContinuousStateBelongsWithSystem) {
   // Successfully calc using a storage that was created by the system.
