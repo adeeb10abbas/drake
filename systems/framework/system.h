@@ -6,7 +6,6 @@
 #include <map>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -18,6 +17,7 @@
 #include "drake/common/drake_assert.h"
 #include "drake/common/drake_bool.h"
 #include "drake/common/drake_copyable.h"
+#include "drake/common/drake_deprecated.h"
 #include "drake/common/drake_throw.h"
 #include "drake/common/nice_type_name.h"
 #include "drake/common/pointer_cast.h"
@@ -32,6 +32,9 @@
 #include "drake/systems/framework/system_scalar_converter.h"
 #include "drake/systems/framework/system_visitor.h"
 #include "drake/systems/framework/witness_function.h"
+
+// TODO(jwnimmer-tri) Remove on 2024-01-01 upon completion of deprecation.
+#include <sstream>
 
 namespace drake {
 namespace systems {
@@ -1070,14 +1073,8 @@ class System : public SystemBase {
   /** @name                      Utility methods */
   //@{
 
-  /** Returns a name for this %System based on a stringification of its type
-  name and memory address.  This is intended for use in diagnostic output
-  and should not be used for behavioral logic, because the stringification
-  of the type name may produce differing results across platforms and
-  because the address can vary from run to run. */
-  std::string GetMemoryObjectName() const;
-
-  // So we don't have to keep writing this->num_input_ports().
+  // Avoid `this->` boilerplate for these member functions.
+  using SystemBase::GetMemoryObjectName;
   using SystemBase::num_input_ports;
   using SystemBase::num_output_ports;
 
@@ -1095,15 +1092,16 @@ class System : public SystemBase {
                                       /* warn_deprecated = */ true));
   }
 
-  /** Convenience method for the case of exactly one input port. */
+  /** Convenience method for the case of exactly one input port.
+  This function ignores deprecated ports, unless there is only one port in which
+  case it will return the deprecated port. */
   const InputPort<T>& get_input_port() const {
-    static constexpr char message[] =
-        "Cannot use the get_input_port() convenience method unless there is"
-        " exactly one input port. num_input_ports() = {}";
-    if (num_input_ports() != 1) {
-      throw std::logic_error(fmt::format(message, num_input_ports()));
+    // Fast path for common case.
+    if (num_input_ports() == 1) {
+      return get_input_port(0);
     }
-    return get_input_port(0);
+    // Fallback for deprecation and/or error handling case.
+    return GetSoleInputPort();
   }
 
   /** Returns the typed input port specified by the InputPortSelection or by
@@ -1137,15 +1135,16 @@ class System : public SystemBase {
                                        /* warn_deprecated = */ true));
   }
 
-  /** Convenience method for the case of exactly one output port. */
+  /** Convenience method for the case of exactly one output port.
+  This function ignores deprecated ports, unless there is only one port in which
+  case it will return the deprecated port. */
   const OutputPort<T>& get_output_port() const {
-    static constexpr char message[] =
-        "Cannot use the get_output_port() convenience method unless there is"
-        " exactly one output port. num_output_ports() = {}";
-    if (num_output_ports() != 1) {
-      throw std::logic_error(fmt::format(message, num_output_ports()));
+    // Fast path for common case.
+    if (num_output_ports() == 1) {
+      return get_output_port(0);
     }
-    return get_output_port(0);
+    // Fallback for deprecation and/or error handling case.
+    return GetSoleOutputPort();
   }
 
   /** Returns the typed output port specified by the OutputPortSelection or by
@@ -1188,40 +1187,33 @@ class System : public SystemBase {
   /** @name                      Graphviz methods */
   //@{
 
-  /** Returns a Graphviz string describing this System.  To render the string,
-  use the Graphviz tool, ``dot``. http://www.graphviz.org/
+  // Add this base class function into this Doxygen section.
+  using SystemBase::GetGraphvizString;
 
-  @param max_depth Sets a limit to the depth of nested diagrams to
-  visualize.  Set to zero to render a diagram as a single system block.
+  DRAKE_DEPRECATED(
+      "2024-01-01",
+      "Instead of calling or overriding this function, either "
+      "call GetGraphvizFragment() or override DoGetGraphvizFragment()")
+  virtual void GetGraphvizFragment(int max_depth, std::stringstream* dot) const;
+  using SystemBase::GetGraphvizFragment;  // Don't shadow.
 
-  @see GenerateHtml
-  */
-  std::string GetGraphvizString(
-      int max_depth = std::numeric_limits<int>::max()) const;
-
-  /** Appends a Graphviz fragment to the @p dot stream.  The fragment must be
-  valid Graphviz when wrapped in a `digraph` or `subgraph` stanza.  Does
-  nothing by default.
-
-  @param max_depth Sets a limit to the depth of nested diagrams to
-  visualize.  Set to zero to render a diagram as a single system block. */
-  virtual void GetGraphvizFragment(int max_depth,
-                                   std::stringstream* dot) const;
-
-  /** Appends a fragment to the @p dot stream identifying the graphviz node
-  representing @p port. Does nothing by default. */
+  DRAKE_DEPRECATED(
+      "2024-01-01",
+      "Instead of calling or overriding this function, either "
+      "call GetGraphvizFragment() or override DoGetGraphvizFragment()")
   virtual void GetGraphvizInputPortToken(const InputPort<T>& port,
                                          int max_depth,
                                          std::stringstream* dot) const;
 
-  /** Appends a fragment to the @p dot stream identifying the graphviz node
-  representing @p port. Does nothing by default. */
+  DRAKE_DEPRECATED(
+      "2024-01-01",
+      "Instead of calling or overriding this function, either "
+      "call GetGraphvizFragment() or override DoGetGraphvizFragment()")
   virtual void GetGraphvizOutputPortToken(const OutputPort<T>& port,
                                           int max_depth,
                                           std::stringstream* dot) const;
 
-  /** Returns an opaque integer that uniquely identifies this system in the
-  Graphviz output. */
+  DRAKE_DEPRECATED("2024-01-01", "Call GetGraphvizFragment() instead")
   int64_t GetGraphvizId() const;
   //@}
 
@@ -1889,6 +1881,15 @@ class System : public SystemBase {
     return system_scalar_converter_;
   }
 
+  // TODO(jwnimmer-tri) On 2024-01-01 upon completion of deprecation, there will
+  // no longer be any reason for System<T> to override this SystemBase function.
+  // At that point, we should remove this particular override.
+  /** The NVI implementation of SystemBase::GetGraphvizFragment() for subclasses
+  to override if desired. The default behavior should be sufficient in most
+  cases. */
+  GraphvizFragment DoGetGraphvizFragment(
+      const GraphvizFragmentParams& params) const override;
+
  private:
   // For any T1 & T2, System<T1> considers System<T2> a friend, so that System
   // can safely and efficiently convert scalar types. See for example
@@ -1966,6 +1967,12 @@ class System : public SystemBase {
   // cache entry.
   void CalcUniquePeriodicDiscreteUpdate(
       const Context<T>& context, DiscreteValues<T>* updated) const;
+
+  // The non-inline implementation of get_input_port().
+  const InputPort<T>& GetSoleInputPort() const;
+
+  // The non-inline implementation of get_output_port().
+  const OutputPort<T>& GetSoleOutputPort() const;
 
   // The constraints_ vector encompass all constraints on this system, whether
   // they were declared by a concrete subclass during construction (e.g., by

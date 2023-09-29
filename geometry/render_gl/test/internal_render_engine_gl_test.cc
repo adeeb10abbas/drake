@@ -5,10 +5,13 @@
 #include <optional>
 #include <unordered_map>
 
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <vtkImageData.h>
-#include <vtkNew.h>
-#include <vtkPNGReader.h>
+
+// To ease build system upkeep, we annotate VTK includes with their deps.
+#include <vtkImageData.h>  // vtkCommonDataModel
+#include <vtkNew.h>        // vtkCommonCore
+#include <vtkPNGReader.h>  // vtkIOImage
 
 #include "drake/common/find_resource.h"
 #include "drake/common/fmt_eigen.h"
@@ -21,6 +24,8 @@
 #include "drake/math/rotation_matrix.h"
 #include "drake/systems/sensors/color_palette.h"
 #include "drake/systems/sensors/image.h"
+
+DEFINE_bool(show_window, false, "Display render windows locally for debugging");
 
 namespace drake {
 namespace geometry {
@@ -96,7 +101,6 @@ const double kClipFar = 100.0;
 const double kZNear = 0.1;
 const double kZFar = 5.;
 const double kFovY = M_PI_4;
-const bool kShowWindow = false;
 
 // Each channel of the color image must be within the expected color +/- 1
 // (where each channel is in the range [0, 255]).
@@ -128,7 +132,7 @@ const Rgba kTextureColor{4 / 255.0, 241 / 255.0, 33 / 255.0, 1.0};
 
 // Provide a default visual color for this tests -- it is intended to be
 // different from the default color of the OpenGL render engine.
-const Rgba kDefaultVisualColor{229 / 255.0, 229 / 255.0, 229/ 255.0, 1.0};
+const Rgba kDefaultVisualColor{229 / 255.0, 229 / 255.0, 229 / 255.0, 1.0};
 const float kDefaultDistance{3.f};
 
 const RenderLabel kDefaultLabel{13531};
@@ -156,8 +160,7 @@ std::ostream& operator<<(std::ostream& out, const ScreenCoord& c) {
 // unsigned bytes, as a (ColorI, alpha) pair, and from a normalized color. It's
 // nice to articulate tests without having to worry about those details.
 struct RgbaColor {
-  RgbaColor(const ColorI& c, int alpha)
-      : r(c.r), g(c.g), b(c.b), a(alpha) {}
+  RgbaColor(const ColorI& c, int alpha) : r(c.r), g(c.g), b(c.b), a(alpha) {}
   explicit RgbaColor(const uint8_t* p) : r(p[0]), g(p[1]), b(p[2]), a(p[3]) {}
   // We'll allow *implicit* conversion from Rgba to RgbaColor to increase the
   // utility of IsColorNear(), but only in the scope of this test.
@@ -186,14 +189,13 @@ std::ostream& operator<<(std::ostream& out, const RgbaColor& c) {
 }
 
 // Tests color within tolerance.
-bool IsColorNear(
-    const RgbaColor& expected, const RgbaColor& tested,
-    double tolerance = kColorPixelTolerance) {
+bool IsColorNear(const RgbaColor& expected, const RgbaColor& tested,
+                 double tolerance = kColorPixelTolerance) {
   using std::abs;
   return (abs(expected.r - tested.r) <= tolerance &&
-      abs(expected.g - tested.g) <= tolerance &&
-      abs(expected.b - tested.b) <= tolerance &&
-      abs(expected.a - tested.a) <= tolerance);
+          abs(expected.g - tested.g) <= tolerance &&
+          abs(expected.b - tested.b) <= tolerance &&
+          abs(expected.a - tested.a) <= tolerance);
 }
 
 // Tests that the color in the given `image` located at screen coordinate `p`
@@ -235,7 +237,8 @@ class RenderEngineGlTest : public ::testing::Test {
     if (!renderer) renderer = renderer_.get();
     const DepthRenderCamera& depth_camera =
         camera_in ? *camera_in : depth_camera_;
-    const ColorRenderCamera color_camera(depth_camera.core(), kShowWindow);
+    const ColorRenderCamera color_camera(depth_camera.core(),
+                                         FLAGS_show_window);
     ImageLabel16I* label = label_in ? label_in : &label_;
     ImageDepth32F* depth = depth_in ? depth_in : &depth_;
     ImageRgba8U* color = color_out ? color_out : &color_;
@@ -355,9 +358,7 @@ class RenderEngineGlTest : public ::testing::Test {
     }
   }
 
-  void SetUp() override {
-    ResetExpectations();
-  }
+  void SetUp() override { ResetExpectations(); }
 
   // Tests that don't instantiate their own renderers should invoke this.
   void Init(const RigidTransformd& X_WR, bool add_terrain = false) {
@@ -484,7 +485,7 @@ class RenderEngineGlTest : public ::testing::Test {
     const ScreenCoord inlier = GetInlier(camera.core().intrinsics());
 
     EXPECT_TRUE(CompareColor(expected_color_, color, inlier))
-              << "Color at: " << inlier;
+        << "Color at: " << inlier;
     EXPECT_TRUE(
         IsExpectedDepth(depth, inlier, expected_object_depth_, kDepthTolerance))
         << "Depth at: " << inlier;
@@ -502,7 +503,8 @@ class RenderEngineGlTest : public ::testing::Test {
   RgbaColor default_color_{kDefaultVisualColor};
 
   // We store a reference depth camera; we can always derive a color camera
-  // from it; they have the same intrinsics and we grab the global kShowWindow.
+  // from it; they have the same intrinsics and we grab the global
+  // FLAGS_show_window.
   const DepthRenderCamera depth_camera_{
       {"unused", {kWidth, kHeight, kFovY}, {kClipNear, kClipFar}, {}},
       {kZNear, kZFar}};
@@ -588,10 +590,10 @@ TEST_F(RenderEngineGlTest, TerrainTest) {
 TEST_F(RenderEngineGlTest, HorizonTest) {
   // Camera at the origin, pointing in a direction parallel to the ground.
   RigidTransformd X_WR{RotationMatrixd{AngleAxisd(-M_PI_2, Vector3d::UnitX()) *
-      AngleAxisd(M_PI_2, Vector3d::UnitY())}};
+                                       AngleAxisd(M_PI_2, Vector3d::UnitY())}};
   Init(X_WR, true);
 
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   const auto& intrinsics = camera.core().intrinsics();
   // Returns y in [0, camera.height), index of horizon location in image
   // coordinate system under several assumptions:
@@ -671,12 +673,11 @@ TEST_F(RenderEngineGlTest, BoxTest) {
                               "drake/geometry/render/test/diag_gradient.png"));
         props.UpdateProperty("phong", "diffuse", Rgba(1, 1, 1));
         if (texture_scaled) {
-          props.AddProperty(
-              "phong", "diffuse_scale", Vector2d{texture_scale, texture_scale});
+          props.AddProperty("phong", "diffuse_scale",
+                            Vector2d{texture_scale, texture_scale});
         }
       }
-      renderer_->RegisterVisual(id, box, props,
-                                RigidTransformd::Identity(),
+      renderer_->RegisterVisual(id, box, props, RigidTransformd::Identity(),
                                 true /* needs update */);
       // We want to position the box so that one corner of the box exactly
       // covers the pixel used for the "inlier test" (w/2, h/2). We can't put
@@ -726,10 +727,9 @@ TEST_F(RenderEngineGlTest, BoxTest) {
             RgbaColor(use_texture ? kTextureColor : default_color_);
       }
 
-      SCOPED_TRACE(fmt::format(
-          "Box test - {} - scale {}",
-          use_texture ? "texture" : "diffuse color",
-          texture_scale));
+      SCOPED_TRACE(fmt::format("Box test - {} - scale {}",
+                               use_texture ? "texture" : "diffuse color",
+                               texture_scale));
       PerformCenterShapeTest(renderer_.get());
     }
   }
@@ -759,7 +759,7 @@ TEST_F(RenderEngineGlTest, TransparentSphereTest) {
   default_color_ = Rgba(kDefaultVisualColor.r(), kDefaultVisualColor.g(),
                         kDefaultVisualColor.b(), int_alpha / 255.0);
   PopulateSphereTest(&renderer);
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   const auto& intrinsics = camera.core().intrinsics();
   ImageRgba8U color(intrinsics.width(), intrinsics.height());
   renderer.RenderColorImage(camera, &color);
@@ -988,8 +988,7 @@ TEST_F(RenderEngineGlTest, MeshTest) {
     renderer_->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
         {id, RigidTransformd::Identity()}});
 
-    expected_color_ =
-        use_texture ? RgbaColor(kTextureColor) : default_color_;
+    expected_color_ = use_texture ? RgbaColor(kTextureColor) : default_color_;
     SCOPED_TRACE("Mesh test");
     PerformCenterShapeTest(renderer_.get());
 
@@ -1029,8 +1028,7 @@ TEST_F(RenderEngineGlTest, ConvexTest) {
     renderer_->UpdatePoses(unordered_map<GeometryId, RigidTransformd>{
         {id, RigidTransformd::Identity()}});
 
-    expected_color_ =
-        use_texture ? RgbaColor(kTextureColor) : default_color_;
+    expected_color_ = use_texture ? RgbaColor(kTextureColor) : default_color_;
     SCOPED_TRACE("Convex test");
     PerformCenterShapeTest(renderer_.get());
   }
@@ -1059,7 +1057,7 @@ TEST_F(RenderEngineGlTest, UnsupportedMeshConvex) {
 // uint16 image is loaded to prove the existence of the conversion, but this
 // test doesn't guarantee universal conversion success.
 TEST_F(RenderEngineGlTest, NonUcharChannelTextures) {
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   const auto& intrinsics = camera.core().intrinsics();
   const Box box(1.999, 0.55, 0.75);
   expected_label_ = RenderLabel(1);
@@ -1343,8 +1341,8 @@ TEST_F(RenderEngineGlTest, DifferentCameras) {
 
     {
       const DepthRenderCamera clipping_near_plane{
-        depth_camera_.core(),
-        {expected_object_depth_ + 0.1, depth_range.max_depth()}};
+          depth_camera_.core(),
+          {expected_object_depth_ + 0.1, depth_range.max_depth()}};
       const float old_object_depth = expected_object_depth_;
       expected_object_depth_ = 0;
       SCOPED_TRACE("Camera change - z near clips mesh");
@@ -1446,7 +1444,7 @@ TEST_F(RenderEngineGlTest, DefaultProperties_RenderLabel) {
   // Case: Change render engine's default to invalid default value; must throw.
   {
     for (RenderLabel label :
-        {RenderLabel::kEmpty, RenderLabel(1), RenderLabel::kDoNotRender}) {
+         {RenderLabel::kEmpty, RenderLabel(1), RenderLabel::kDoNotRender}) {
       DRAKE_EXPECT_THROWS_MESSAGE(
           RenderEngineGl({.default_label = label}),
           ".* default render label .* either 'kUnspecified' or 'kDontCare'.*");
@@ -1558,8 +1556,8 @@ TEST_F(RenderEngineGlTest, MeshGeometryReuse) {
   RenderEngineGl engine;
   RenderEngineGlTester tester(&engine);
 
-  auto filename = FindResourceOrThrow(
-      "drake/geometry/render/test/meshes/box.obj");
+  auto filename =
+      FindResourceOrThrow("drake/geometry/render/test/meshes/box.obj");
   const internal::OpenGlGeometry& initial_geometry = tester.GetMesh(filename);
   const internal::OpenGlGeometry& second_geometry = tester.GetMesh(filename);
 
@@ -1622,7 +1620,7 @@ TEST_F(RenderEngineGlTest, FallbackLight) {
   props.AddProperty("phong", "diffuse", test_color);  // match the plane.
   props.AddProperty("label", "id", dummy_label);
   const RigidTransformd X_WB(Vector3d(0, 0, 3));
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   ImageRgba8U image(camera.core().intrinsics().width(),
                     camera.core().intrinsics().height());
   renderer.RegisterVisual(GeometryId::get_new_id(), box, props, X_WB,
@@ -1699,7 +1697,7 @@ TEST_F(RenderEngineGlTest, SingleLight) {
   };
 
   // 45-degree vertical field of view.
-  const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+  const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
   // The camera's position is p_WC = [0, 0, 3]. The ground plane lies on the
   // world's x-y plane. So, the ground is 3.0 meters away from the camera. This
   // will inform attenuation calculations.
@@ -1756,28 +1754,22 @@ TEST_F(RenderEngineGlTest, SingleLight) {
        .expected_color = Rgba(0, 0, 0),
        // The lights are positioned badly to illuminate anything.
        .description = "Camera coordinates in the world frame - nothing lit!"},
-      {.light = {.color = light_color,
-                 .cone_angle = 22.5},
+      {.light = {.color = light_color, .cone_angle = 22.5},
        .expected_color = modulated_color,
        .description = "Non-white light color"},
-      {.light = {.intensity = 0.1,
-                 .cone_angle = 22.5},
+      {.light = {.intensity = 0.1, .cone_angle = 22.5},
        .expected_color = kTerrainColor.scale_rgb(0.1),
        .description = "Low intensity"},
-      {.light = {.intensity = 3.0,
-                 .cone_angle = 22.5},
+      {.light = {.intensity = 3.0, .cone_angle = 22.5},
        .expected_color = kTerrainColor.scale_rgb(3),
        .description = "High intensity"},
-      {.light = {.attenuation_values = {2, 0, 0},
-                 .cone_angle = 22.5},
+      {.light = {.attenuation_values = {2, 0, 0}, .cone_angle = 22.5},
        .expected_color = kTerrainColor.scale_rgb(0.5),
        .description = "Non-unit constant attenuation"},
-      {.light = {.attenuation_values = {0, 1, 0},
-                 .cone_angle = 22.5},
+      {.light = {.attenuation_values = {0, 1, 0}, .cone_angle = 22.5},
        .expected_color = kTerrainColor.scale_rgb(1 / dist),
        .description = "Linear attenuation"},
-      {.light = {.attenuation_values = {0, 0, 1},
-                 .cone_angle = 22.5},
+      {.light = {.attenuation_values = {0, 0, 1}, .cone_angle = 22.5},
        .expected_color = kTerrainColor.scale_rgb(1 / (dist * dist)),
        .description = "Quadratic attenuation"},
       {.light = {.cone_angle = 0},
@@ -1830,7 +1822,7 @@ TEST_F(RenderEngineGlTest, MultiLights) {
 
   // Lights combine.
   {
-    const ColorRenderCamera camera(depth_camera_.core(), kShowWindow);
+    const ColorRenderCamera camera(depth_camera_.core(), FLAGS_show_window);
     const RigidTransformd X_WR(RotationMatrixd::MakeXRotation(M_PI),
                                Vector3d(0, 0, 3));
     ImageRgba8U image(camera.core().intrinsics().width(),
@@ -1841,13 +1833,9 @@ TEST_F(RenderEngineGlTest, MultiLights) {
     // The lights are pointing directly at the image center, but their total
     // intensity is 0.75. So, we should get 75% of the diffuse color.
     const RenderEngineGlParams params{
-        .lights = {{.type = "point",
-                    .intensity = 0.25},
-                   {.type = "spot",
-                    .intensity = 0.25,
-                    .cone_angle = 45},
-                   {.type = "directional",
-                    .intensity = 0.25}}};
+        .lights = {{.type = "point", .intensity = 0.25},
+                   {.type = "spot", .intensity = 0.25, .cone_angle = 45},
+                   {.type = "directional", .intensity = 0.25}}};
     RenderEngineGl renderer(params);
 
     InitializeRenderer(X_WR, true /* add terrain */, &renderer);
@@ -1920,8 +1908,7 @@ Vector4<int> FindBoxEdges(const ImageType& image) {
 
       // Look for edge between current pixel and pixel below.
       const T* bottom_pixel = image.at(x, y + 1);
-      const AdjacentPixel bottom_result =
-          Compare(curr_pixel, bottom_pixel);
+      const AdjacentPixel bottom_result = Compare(curr_pixel, bottom_pixel);
       if (bottom_result == GroundToBox) {
         // Current lies on the ground, next lies on the box; bottom edge.
         DRAKE_DEMAND(edges(3) == -1 || edges(3) == y + 1);
@@ -1934,8 +1921,7 @@ Vector4<int> FindBoxEdges(const ImageType& image) {
 
       // Look for edge between current pixel and pixel to the right.
       const T* right_pixel = image.at(x + 1, y);
-      const AdjacentPixel right_result =
-          Compare(curr_pixel, right_pixel);
+      const AdjacentPixel right_result = Compare(curr_pixel, right_pixel);
       if (right_result == GroundToBox) {
         // Current lies on the ground, next lies on the box; left edge.
         DRAKE_DEMAND(edges(0) == -1 || edges(0) == x + 1);
@@ -1949,7 +1935,7 @@ Vector4<int> FindBoxEdges(const ImageType& image) {
   }
 
   return edges;
-  }
+}
 
 }  // namespace
 
@@ -1985,7 +1971,7 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
 
   const CameraInfo ref_intrinsics{w, h, fx, fy, cx, cy};
   const ColorRenderCamera ref_color_camera{
-      {"n/a", ref_intrinsics, {clip_n, clip_f}, {}}, kShowWindow};
+      {"n/a", ref_intrinsics, {clip_n, clip_f}, {}}, FLAGS_show_window};
   const DepthRenderCamera ref_depth_camera{
       {"n/a", ref_intrinsics, {clip_n, clip_f}, {}}, {min_depth, max_depth}};
 
@@ -2033,7 +2019,7 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     const double cy2 = h2 / 2.0 + 0.5 + offset_y;
     const CameraInfo intrinsics{w2, h2, fx2, fy2, cx2, cy2};
     const ColorRenderCamera color_camera{
-        {"n/a", intrinsics, {clip_n, clip_f}, {}}, kShowWindow};
+        {"n/a", intrinsics, {clip_n, clip_f}, {}}, FLAGS_show_window};
     const DepthRenderCamera depth_camera{
         {"n/a", intrinsics, {clip_n, clip_f}, {}}, {min_depth, max_depth}};
 
@@ -2092,7 +2078,7 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     const double n_alt = expected_object_depth_ * 0.1;
     const double f_alt = expected_object_depth_ * 0.9;
     const ColorRenderCamera color_camera{
-        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, kShowWindow};
+        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, FLAGS_show_window};
     // Set depth range to clipping range so we don't take a chance with the
     // depth range lying outside the clipping range.
     const DepthRenderCamera depth_camera{
@@ -2116,7 +2102,7 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     const double n_alt = expected_object_depth_ + 2.1;
     const double f_alt = expected_object_depth_ + 4.1;
     const ColorRenderCamera color_camera{
-        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, kShowWindow};
+        {"n/a", ref_intrinsics, {n_alt, f_alt}, {}}, FLAGS_show_window};
     // Set depth range to clipping range so we don't take a chance with the
     // depth range lying outside the clipping range.
     const DepthRenderCamera depth_camera{
@@ -2146,12 +2132,12 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     renderer_->RenderDepthImage(depth_camera, &depth);
 
     // Confirm pixel in corner (ground) and pixel in center (box).
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
-            ImageTraits<PixelType::kDepth32F>::kTooClose, 0.0));
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{0, 0},
-            ImageTraits<PixelType::kDepth32F>::kTooFar, 0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
+                                ImageTraits<PixelType::kDepth32F>::kTooClose,
+                                0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{0, 0},
+                                ImageTraits<PixelType::kDepth32F>::kTooFar,
+                                0.0));
   }
 
   {
@@ -2165,12 +2151,12 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     renderer_->RenderDepthImage(depth_camera, &depth);
 
     // Confirm pixel in corner (ground) and pixel in center (box).
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
-            ImageTraits<PixelType::kDepth32F>::kTooFar, 0.0));
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{0, 0},
-            ImageTraits<PixelType::kDepth32F>::kTooFar, 0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
+                                ImageTraits<PixelType::kDepth32F>::kTooFar,
+                                0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{0, 0},
+                                ImageTraits<PixelType::kDepth32F>::kTooFar,
+                                0.0));
   }
 
   {
@@ -2187,12 +2173,12 @@ TEST_F(RenderEngineGlTest, IntrinsicsAndRenderProperties) {
     renderer_->RenderDepthImage(depth_camera, &depth);
 
     // Confirm pixel in corner (ground) and pixel in center (box).
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
-            ImageTraits<PixelType::kDepth32F>::kTooClose, 0.0));
-    EXPECT_TRUE(
-        IsExpectedDepth(depth, ScreenCoord{0, 0},
-            ImageTraits<PixelType::kDepth32F>::kTooClose, 0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{w / 2, h / 2},
+                                ImageTraits<PixelType::kDepth32F>::kTooClose,
+                                0.0));
+    EXPECT_TRUE(IsExpectedDepth(depth, ScreenCoord{0, 0},
+                                ImageTraits<PixelType::kDepth32F>::kTooClose,
+                                0.0));
   }
 }
 

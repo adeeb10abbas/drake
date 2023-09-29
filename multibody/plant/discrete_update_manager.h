@@ -35,6 +35,33 @@ class AccelerationKinematicsCache;
 template <typename T>
 struct JointLockingCacheData;
 
+// Struct to store MultibodyPlant input forces.
+template <typename T>
+struct InputPortForces {
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(InputPortForces);
+  // Constructs an `InputPortForces` to store input port values for the given
+  // `plant`. Values are initialized to zero at construction.
+  explicit InputPortForces(const MultibodyPlant<T>& plant)
+      : externally_applied_forces(plant),
+        actuation_w_pd(plant.num_velocities()),
+        actuation_wo_pd(plant.num_velocities()) {
+    SetZero();
+  }
+  void SetZero() {
+    externally_applied_forces.SetZero();
+    actuation_w_pd.setZero();
+    actuation_wo_pd.setZero();
+  }
+  // Externally applied generalized and body spatial forces.
+  MultibodyForces<T> externally_applied_forces;
+  // Joint actuation, indexed by DOF. We split them into actuators with and
+  // without PD control. Both have size equal to the number of generalized
+  // velocities. Entries with no contribution are zero. In other words, the
+  // total actuation equals actuation_w_pd + actuation_wo_pd.
+  VectorX<T> actuation_w_pd;   // For actuated joints with PD control.
+  VectorX<T> actuation_wo_pd;  // For actuated joints without PD control.
+};
+
 /* This class is used to perform all calculations needed to advance state for a
  MultibodyPlant with discrete state.
 
@@ -143,13 +170,10 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
     DoCalcDiscreteValues(context, updates);
   }
 
-  /* MultibodyPlant invokes this method to report contact results. */
-  void CalcContactResults(const systems::Context<T>& context,
-                          ContactResults<T>* contact_results) const {
-    DRAKE_DEMAND(contact_results != nullptr);
-    plant().ValidateContext(context);
-    DoCalcContactResults(context, contact_results);
-  }
+  /* Evaluates the contact results used in CalcDiscreteValues() to advance the
+   discrete update from the state stored in `context`. */
+  const ContactResults<T>& EvalContactResults(
+      const systems::Context<T>& context) const;
 
   // Computes all non-contact applied forces including:
   //  - Force elements.
@@ -158,6 +182,7 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
   //  - (possibly) Joint limits.
   void CalcNonContactForces(const drake::systems::Context<T>& context,
                             bool include_joint_limit_penalty_forces,
+                            bool include_pd_controlled_input,
                             MultibodyForces<T>* forces) const;
 
   // TODO(amcastro-tri): Consider replacing with more specific APIs with the
@@ -165,6 +190,13 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
   // constraints, rather than raw solver results.
   const contact_solvers::internal::ContactSolverResults<T>&
   EvalContactSolverResults(const systems::Context<T>& context) const;
+
+  /* When the discrete update is performed, see CalcDiscreteValues(), multibody
+   forces applied during that updated are cached. This method returns a
+   reference to the total multibody forces applied during the discrete update.
+   These forces include force elements, constraints and contact forces. */
+  const MultibodyForces<T>& EvalDiscreteUpdateMultibodyForces(
+      const systems::Context<T>& context) const;
 
   /* Publicly exposed MultibodyPlant private/protected methods.
    @{ */
@@ -211,8 +243,8 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
    information from the owning MultibodyPlant. */
   virtual void ExtractModelInfo() {}
 
-  /* Derived DiscreteUpdateManager should override this method to declare
-   cache entries in the owning MultibodyPlant. */
+  /* Derived classes can implement this method if they wish to declare their own
+   cache entries. It defaults to a no-op. */
   virtual void DoDeclareCacheEntries() {}
 
   /* Returns the discrete state index of the rigid position and velocity states
@@ -221,14 +253,28 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
     return multibody_state_index_;
   }
 
+  /* Evaluates actuation input into two separate contributions: Actuation with
+   PD control and actuation without PD control. Entries with no contribution are
+   left initialized to zero.
+   @param[out] actuation_w_pd
+     Contribution for actuators with PD control. Indexed by velocity DOF.
+   @param[out] actuation_wo_pd
+     Contribution for actuators without PD control. Indexed by velocity DOF.
+   @pre The size of actuation_w_pd and actuation_wo_pd equals
+   plant().num_velocities().
+   */
+  void CalcJointActuationForces(const systems::Context<T>& context,
+                                VectorX<T>* actuation_w_pd,
+                                VectorX<T>* actuation_wo_pd) const;
+
   /* Evaluates the discretely sampled MultibodyPlant input port force values.
    This includes forces from externally applied spatial forces, externally
    applied generalized forces, and joint actuation forces.  */
-  const MultibodyForces<T>& EvalDiscreteInputPortForces(
+  const InputPortForces<T>& EvalInputPortForces(
       const drake::systems::Context<T>& context) const {
     return plant()
         .get_cache_entry(cache_indexes_.discrete_input_port_forces)
-        .template Eval<MultibodyForces<T>>(context);
+        .template Eval<InputPortForces<T>>(context);
   }
 
   /* Exposed MultibodyPlant private/protected methods.
@@ -246,8 +292,12 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
   void CalcForceElementsContribution(const drake::systems::Context<T>& context,
                                      MultibodyForces<T>* forces) const;
 
-  const internal::JointLockingCacheData<T>&
-  EvalJointLockingCache(
+  const internal::JointLockingCacheData<T>& EvalJointLockingCache(
+      const systems::Context<T>& context) const;
+
+  VectorX<T> AssembleActuationInput(const systems::Context<T>& context) const;
+
+  VectorX<T> AssembleDesiredStateInput(
       const systems::Context<T>& context) const;
 
   const std::map<MultibodyConstraintId, internal::CouplerConstraintSpec>&
@@ -258,6 +308,9 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
 
   const std::map<MultibodyConstraintId, internal::BallConstraintSpec>&
   ball_constraints_specs() const;
+
+  const std::map<MultibodyConstraintId, internal::WeldConstraintSpec>&
+  weld_constraints_specs() const;
 
   const std::map<MultibodyConstraintId, bool>& GetConstraintActiveStatus(
       const systems::Context<T>& context) const;
@@ -280,9 +333,20 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
       const systems::Context<T>& context,
       systems::DiscreteValues<T>* updates) const = 0;
 
+  /* Concrete managers must implement this method to compute contact results
+   according to the underlying formulation of contact. */
   virtual void DoCalcContactResults(
       const systems::Context<T>& context,
       ContactResults<T>* contact_results) const = 0;
+
+  /* Concrete managers must implement this method to compute the total multibody
+   forces applied during a discrete update. The particulars of the numerical
+   scheme matter. For instance, whether we use an explicit or implicit update.
+   Therefore only concrete managers know how to perform this computation in
+   accordance to the schemes they implement. See
+   EvalDiscreteUpdateMultibodyForces(). */
+  virtual void DoCalcDiscreteUpdateMultibodyForces(
+      const systems::Context<T>& context, MultibodyForces<T>* forces) const = 0;
 
   // Struct used to conglomerate the indexes of cache entries declared by the
   // manager.
@@ -300,6 +364,8 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
     systems::CacheIndex discrete_input_port_forces;
     systems::CacheIndex contact_solver_results;
     systems::CacheIndex non_contact_forces_evaluation_in_progress;
+    systems::CacheIndex contact_results;
+    systems::CacheIndex discrete_update_multibody_forces;
   };
 
   // Exposes indices for the cache entries declared by this class for derived
@@ -328,16 +394,25 @@ class DiscreteUpdateManager : public ScalarConvertibleComponent<T> {
 
   // Collects the sum of all forces added to the owning MultibodyPlant and store
   // them in given `forces`. The existing values in `forces` is cleared.
-  void CopyForcesFromInputPorts(const systems::Context<T>& context,
-                                MultibodyForces<T>* forces) const;
+  void CalcInputPortForces(const systems::Context<T>& context,
+                           InputPortForces<T>* forces) const;
 
   // NVI to DoDeclareCacheEntries().
   void DeclareCacheEntries();
 
-  systems::DiscreteStateIndex multibody_state_index_;
-  CacheIndexes cache_indexes_;
+  /* Calc version of EvalContactResults(), NVI to DoCalcContactResults(). */
+  void CalcContactResults(const systems::Context<T>& context,
+                          ContactResults<T>* contact_results) const;
+
+  // Calc version of EvalDiscreteUpdateMultibodyForces, NVI to
+  // DoCalcDiscreteUpdateMultibodyForces.
+  void CalcDiscreteUpdateMultibodyForces(const systems::Context<T>& context,
+                                         MultibodyForces<T>* forces) const;
+
   const MultibodyPlant<T>* plant_{nullptr};
   MultibodyPlant<T>* mutable_plant_{nullptr};
+  systems::DiscreteStateIndex multibody_state_index_;
+  CacheIndexes cache_indexes_;
 };
 
 }  // namespace internal

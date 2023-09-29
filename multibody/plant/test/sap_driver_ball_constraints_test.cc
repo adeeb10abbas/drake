@@ -157,7 +157,7 @@ TEST_P(TwoBodiesTest, ConfirmConstraintProperties) {
             Vector3d(kInfinity, kInfinity, kInfinity));
 
   EXPECT_EQ(p.stiffnesses(), Vector3d(kInfinity, kInfinity, kInfinity));
-  EXPECT_EQ(p.relaxation_times(), plant_.time_step() * Vector3d::Ones());
+  EXPECT_EQ(p.relaxation_times(), Vector3d::Zero());
 
   // This value is hard-coded in the source. This test serves as a brake to
   // prevent the value changing without notification. Changing this value
@@ -267,6 +267,7 @@ GTEST_TEST(BallConstraintsTests, VerifyIdMapping) {
   // Throw on id to wrong constraint specs type.
   EXPECT_THROW(plant.get_coupler_constraint_specs(ball_id), std::exception);
   EXPECT_THROW(plant.get_distance_constraint_specs(ball_id), std::exception);
+  EXPECT_THROW(plant.get_weld_constraint_specs(ball_id), std::exception);
 }
 
 GTEST_TEST(BallConstraintTests, FailOnTAMSI) {

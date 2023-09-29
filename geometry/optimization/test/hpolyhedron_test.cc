@@ -11,6 +11,7 @@
 #include "drake/common/yaml/yaml_io.h"
 #include "drake/geometry/geometry_frame.h"
 #include "drake/geometry/meshcat.h"
+#include "drake/geometry/optimization/hyperrectangle.h"
 #include "drake/geometry/optimization/test_utilities.h"
 #include "drake/geometry/optimization/vpolytope.h"
 #include "drake/geometry/scene_graph.h"
@@ -157,6 +158,102 @@ GTEST_TEST(HPolyhedronTest, ConstructorFromVPolytope) {
   EXPECT_TRUE(hpoly1.PointInSet(hpoly1.MaybeGetFeasiblePoint().value()));
   ASSERT_TRUE(hpoly2.MaybeGetFeasiblePoint().has_value());
   EXPECT_TRUE(hpoly2.PointInSet(hpoly2.MaybeGetFeasiblePoint().value()));
+}
+
+void CheckHPolyhedronContainsVPolyhedron(const HPolyhedron& h,
+                                         const VPolytope& v, double tol = 0) {
+  for (int i = 0; i < v.vertices().cols(); ++i) {
+    EXPECT_TRUE(h.PointInSet(v.vertices().col(i)));
+  }
+}
+
+GTEST_TEST(HPolyhedronTest, ConstructorFromVPolytopeQHullProblems) {
+  // Test cases of VPolytopes that QHull cannot handle on its own.
+  // Code logic in the constructor should handle these cases without any
+  // QHull errors.
+
+  // Case 1: Not enough points (need at least n+1 points in R^n). This
+  // will throw QHull error QH6214.
+  Eigen::Matrix<double, 2, 1> vert1;
+  vert1 << 1, 0;
+  const VPolytope vpoly1(vert1);
+  EXPECT_NO_THROW(HPolyhedron{vpoly1});
+  const HPolyhedron hpoly1(vpoly1);
+  CheckHPolyhedronContainsVPolyhedron(hpoly1, vpoly1);
+  EXPECT_FALSE(hpoly1.PointInSet(Eigen::Vector2d(0, 0)));
+  EXPECT_FALSE(hpoly1.PointInSet(Eigen::Vector2d(2, 0)));
+  EXPECT_FALSE(hpoly1.PointInSet(Eigen::Vector2d(1, 1)));
+  EXPECT_FALSE(hpoly1.PointInSet(Eigen::Vector2d(1, -1)));
+
+  Eigen::Matrix<double, 2, 2> vert2;
+  // clang-format off
+  vert2 << 1, 0,
+           0, 1;
+  // clang-format on
+  const VPolytope vpoly2(vert2);
+  EXPECT_NO_THROW(HPolyhedron{vpoly2});
+  const HPolyhedron hpoly2(vpoly2);
+  CheckHPolyhedronContainsVPolyhedron(hpoly2, vpoly2);
+  EXPECT_FALSE(hpoly2.PointInSet(Eigen::Vector2d(0, 0)));
+  EXPECT_FALSE(hpoly2.PointInSet(Eigen::Vector2d(1, 1)));
+  EXPECT_FALSE(hpoly2.PointInSet(Eigen::Vector2d(2, -1)));
+  EXPECT_FALSE(hpoly2.PointInSet(Eigen::Vector2d(-1, 2)));
+
+  Eigen::Matrix<double, 3, 3> vert3;
+  // clang-format off
+  vert3 << 1, 0, 0,
+           0, 1, 0,
+           0, 0, 0;
+  // clang-format on
+  const VPolytope vpoly3(vert3);
+  EXPECT_NO_THROW(HPolyhedron{vpoly3});
+  const HPolyhedron hpoly3(vpoly3);
+  CheckHPolyhedronContainsVPolyhedron(hpoly3, vpoly3);
+  EXPECT_FALSE(hpoly3.PointInSet(Eigen::Vector3d(1, 1, 0)));
+  EXPECT_FALSE(hpoly3.PointInSet(Eigen::Vector3d(-1, 0, 0)));
+  EXPECT_FALSE(hpoly3.PointInSet(Eigen::Vector3d(0, -1, 0)));
+  EXPECT_FALSE(hpoly3.PointInSet(Eigen::Vector3d(0, 0, 1)));
+  EXPECT_FALSE(hpoly3.PointInSet(Eigen::Vector3d(0, 0, -1)));
+
+  // Case 2: VPolytope not full-dimensional (all points lie on a
+  // proper affine subspace). This will throw QHull error QH6154.
+  Eigen::Matrix<double, 2, 5> vert4;
+  // clang-format off
+  vert4 << 1, 2, 3, 4, 5,
+           0, 1, 2, 3, 4;
+  // clang-format on
+  const VPolytope vpoly4(vert4);
+  EXPECT_NO_THROW(HPolyhedron{vpoly4});
+  const HPolyhedron hpoly4(vpoly4);
+  CheckHPolyhedronContainsVPolyhedron(hpoly4, vpoly4);
+
+  Eigen::Matrix<double, 3, 4> vert5;
+  // clang-format off
+  vert5 << 0, 1, 0, 1,
+           0, 0, 1, 1,
+           0, 0, 0, 0;
+  // clang-format on
+  const VPolytope vpoly5(vert5);
+  EXPECT_NO_THROW(HPolyhedron{vpoly5});
+  const HPolyhedron hpoly5(vpoly5);
+  CheckHPolyhedronContainsVPolyhedron(hpoly5, vpoly5);
+
+  // Case 3: VPolytope is empty
+  Eigen::Matrix<double, 2, 0> vert6;
+  const VPolytope vpoly6(vert6);
+  EXPECT_TRUE(vpoly6.IsEmpty());
+  EXPECT_EQ(vpoly6.ambient_dimension(), 2);
+  EXPECT_NO_THROW(HPolyhedron{vpoly6});
+  const HPolyhedron hpoly6(vpoly6);
+  EXPECT_TRUE(hpoly6.IsEmpty());
+
+  Eigen::Matrix<double, 0, 0> vert7;
+  const VPolytope vpoly7(vert7);
+  EXPECT_TRUE(vpoly7.IsEmpty());
+  EXPECT_EQ(vpoly7.ambient_dimension(), 0);
+  // Should throw an error, because HPolyhedron can't
+  // handle an empty zero dimensional set.
+  EXPECT_THROW(HPolyhedron{vpoly7}, std::exception);
 }
 
 GTEST_TEST(HPolyhedronTest, L1BallTest) {
@@ -511,7 +608,7 @@ GTEST_TEST(HPolyhedronTest, NonnegativeScalingTest) {
 
 bool PointInScaledSet(const solvers::VectorXDecisionVariable& x_vars,
                       const solvers::VectorXDecisionVariable& t_vars,
-                      const Vector2d& x, const Vector2d& t,
+                      const VectorXd& x, const VectorXd& t,
                       solvers::MathematicalProgram* prog,
                       const std::vector<Binding<Constraint>>& constraints) {
   const double tol = 0;
@@ -783,14 +880,15 @@ GTEST_TEST(HPolyhedronTest, ReduceL1LInfBallIntersection) {
   A_int.bottomRows(Linfty_ball.A().rows()) = Linfty_ball.A();
   b_int.bottomRows(Linfty_ball.b().rows()) = Linfty_ball.b();
   HPolyhedron polyhedron_to_reduce(A_int, b_int);
-  const auto redundant_indices = polyhedron_to_reduce.FindRedundant();
+  const double tol = 1E-7;
+  const auto redundant_indices = polyhedron_to_reduce.FindRedundant(tol);
   // Removed Linfty_ball.
   std::set<int> redundant_indices_expected;
   for (int i = 0; i < Linfty_ball.A().rows(); ++i) {
     redundant_indices_expected.emplace(i + L1_ball.A().rows());
   }
   EXPECT_EQ(redundant_indices, redundant_indices_expected);
-  HPolyhedron reduced_polyhedron = polyhedron_to_reduce.ReduceInequalities();
+  HPolyhedron reduced_polyhedron = polyhedron_to_reduce.ReduceInequalities(tol);
 
   EXPECT_TRUE(CompareMatrices(reduced_polyhedron.A(), L1_ball.A()));
   EXPECT_TRUE(CompareMatrices(reduced_polyhedron.b(), L1_ball.b()));

@@ -604,7 +604,7 @@ GTEST_TEST(ActuationPortsTest, CheckActuation) {
   DRAKE_EXPECT_THROWS_MESSAGE(
       plant.CalcTimeDerivatives(*context, continuous_state.get()),
       "Actuation input port for model instance .* must "
-          "be connected.");
+      "be connected or PD gains must be specified for each actuator.");
 
   // Verify that derivatives can be computed after fixing the acrobot actuation
   // input port.
@@ -1714,9 +1714,11 @@ GTEST_TEST(MultibodyPlantTest, ReversedWeldError) {
       ".*already has a joint.*extra_welds_to_world.*joint.*not allowed.*");
 }
 
-// Utility to verify that the only ports of MultibodyPlant that are feedthrough
-// are acceleration and reaction force ports.
-bool OnlyAccelerationAndReactionPortsFeedthrough(
+// Utility to verify the subset of output ports we expect to be direct a
+// feedthrough of the inputs.
+// @returns `true` iff only if a closed subset of the ports is direct
+// feedthrough.
+bool VerifyFeedthroughPorts(
     const MultibodyPlant<double>& plant) {
   // Create a set of the indices of all ports that can be feedthrough.
   std::set<int> ok_to_feedthrough;
@@ -1728,6 +1730,10 @@ bool OnlyAccelerationAndReactionPortsFeedthrough(
         plant.get_generalized_acceleration_output_port(i).get_index());
   ok_to_feedthrough.insert(
       plant.get_body_spatial_accelerations_output_port().get_index());
+  if (plant.is_discrete()) {
+    ok_to_feedthrough.insert(
+        plant.get_contact_results_output_port().get_index());
+  }
 
   // Now find all the feedthrough ports and make sure they are on the
   // list of expected feedthrough ports.
@@ -1822,7 +1828,7 @@ GTEST_TEST(MultibodyPlantTest, CollisionGeometryRegistration) {
 
   // Only accelerations and joint reaction forces feedthrough, even with the
   // new ports related to SceneGraph interaction.
-  EXPECT_TRUE(OnlyAccelerationAndReactionPortsFeedthrough(plant));
+  EXPECT_TRUE(VerifyFeedthroughPorts(plant));
 
   EXPECT_EQ(plant.num_visual_geometries(), 0);
   EXPECT_EQ(plant.num_collision_geometries(), 3);
@@ -2768,7 +2774,7 @@ class KukaArmTest : public ::testing::TestWithParam<double> {
 
     // Only accelerations and joint reaction forces feedthrough, for either
     // continuous or discrete plants.
-    EXPECT_TRUE(OnlyAccelerationAndReactionPortsFeedthrough(*plant_));
+    EXPECT_TRUE(VerifyFeedthroughPorts(*plant_));
 
     EXPECT_EQ(plant_->num_positions(), 7);
     EXPECT_EQ(plant_->num_velocities(), 7);
@@ -4229,6 +4235,10 @@ GTEST_TEST(MultibodyPlantTest, SetDefaultPositions) {
   DRAKE_EXPECT_THROWS_MESSAGE(
       plant->SetDefaultPositions(iiwa0_instance, q.head<7>()),
       ".*you must call Finalize.* first.");
+  DRAKE_EXPECT_THROWS_MESSAGE(plant->GetDefaultPositions(),
+                              ".*you must call Finalize.* first.");
+  DRAKE_EXPECT_THROWS_MESSAGE(plant->GetDefaultPositions(iiwa0_instance),
+                              ".*you must call Finalize.* first.");
   plant->Finalize();
 
   // Throws if the q is the wrong size.
@@ -4238,9 +4248,18 @@ GTEST_TEST(MultibodyPlantTest, SetDefaultPositions) {
       plant->SetDefaultPositions(iiwa1_instance, q.head<3>()),
       ".*q_instance.size.* == num_positions.*");
 
-  plant->SetDefaultPositions(q);
-
   const double kTol = 1e-15;
+
+  EXPECT_FALSE(CompareMatrices(plant->GetDefaultPositions(), q, kTol));
+  EXPECT_TRUE(CompareMatrices(
+        plant->GetDefaultPositions(),
+        plant->GetPositions(*plant->CreateDefaultContext())));
+  plant->SetDefaultPositions(q);
+  EXPECT_TRUE(CompareMatrices(plant->GetDefaultPositions(), q, kTol));
+  EXPECT_TRUE(CompareMatrices(
+        plant->GetDefaultPositions(),
+        plant->GetPositions(*plant->CreateDefaultContext())));
+
   auto context = plant->CreateDefaultContext();
   EXPECT_TRUE(CompareMatrices(plant->GetPositions(*context), q, kTol));
   EXPECT_TRUE(CompareMatrices(plant->GetPositions(*context, iiwa0_instance),
@@ -4253,8 +4272,27 @@ GTEST_TEST(MultibodyPlantTest, SetDefaultPositions) {
       7 + 7 + 7, 3.0, 4.0);  // 7 joints each + 7 floating base positions.
   q.segment(7, 4).normalize();  // normalize the quaternion indices.
 
+  EXPECT_FALSE(
+      CompareMatrices(
+          plant->GetDefaultPositions(iiwa0_instance), q.head<7>(), kTol));
   plant->SetDefaultPositions(iiwa0_instance, q.head<7>());
+  EXPECT_TRUE(
+      CompareMatrices(
+          plant->GetDefaultPositions(iiwa0_instance), q.head<7>(), kTol));
+  EXPECT_TRUE(CompareMatrices(
+        plant->GetDefaultPositions(),
+        plant->GetPositions(*plant->CreateDefaultContext())));
+
+  EXPECT_FALSE(
+      CompareMatrices(
+          plant->GetDefaultPositions(iiwa1_instance), q.tail<14>(), kTol));
   plant->SetDefaultPositions(iiwa1_instance, q.tail<14>());
+  EXPECT_TRUE(
+      CompareMatrices(
+          plant->GetDefaultPositions(iiwa1_instance), q.tail<14>(), kTol));
+  EXPECT_TRUE(CompareMatrices(
+        plant->GetDefaultPositions(),
+        plant->GetPositions(*plant->CreateDefaultContext())));
 
   plant->SetDefaultContext(context.get());
   EXPECT_TRUE(CompareMatrices(plant->GetPositions(*context), q, kTol));
@@ -4262,6 +4300,9 @@ GTEST_TEST(MultibodyPlantTest, SetDefaultPositions) {
                               q.head<7>()));
   EXPECT_TRUE(CompareMatrices(plant->GetPositions(*context, iiwa1_instance),
                               q.tail<14>(), kTol));
+  EXPECT_TRUE(CompareMatrices(
+        plant->GetDefaultPositions(),
+        plant->GetPositions(*plant->CreateDefaultContext())));
 }
 
 GTEST_TEST(MultibodyPlantTest, GetNames) {

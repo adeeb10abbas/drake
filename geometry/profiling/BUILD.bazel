@@ -1,9 +1,9 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_binary",
 )
 load("//tools/lint:lint.bzl", "add_lint_tests")
-load("@drake//tools/workspace:forward_files.bzl", "forward_files")
+load("//tools/workspace:forward_files.bzl", "forward_files")
 
 _EVO_MESH = forward_files(
     srcs = ["@drake_models//:dishes/bowls/evo_bowl_no_mtl.obj"],
@@ -39,4 +39,4 @@ filegroup(
     srcs = _EVO_MESH,
 )
 
-add_lint_tests(enable_clang_format_lint = False)
+add_lint_tests()
